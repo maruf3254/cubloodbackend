@@ -88,6 +88,8 @@ export const register = async (req, res, next) => {
       "\\$&"
     );
 
+
+
     const student = await studentInfoModel.findOne({
       student_id: trimmedStudentId,
       name: {
@@ -95,6 +97,9 @@ export const register = async (req, res, next) => {
         $options: "i",
       },
     });
+
+    console.log("Entered name:", trimmedName);
+    console.log("Official student name:", student.name);
 
     if (!student) {
       return next(
@@ -740,65 +745,170 @@ export const changeDonorPassword = async (req, res, next) => {
 // Only users who are active + available are returned.
 // =====================================================
 
+// export const searchDonors = async (req, res, next) => {
+//   try {
+//     const { student_id, name } = req.query;
+
+//     // =====================================================
+//     // 1. STUDENT ID + NAME REQUIRED
+//     // =====================================================
+
+//     if (!student_id || !name) {
+//       return next(
+//         new AppError(
+//           "Student ID and name are required",
+//           400
+//         )
+//       );
+//     }
+
+//     const trimmedStudentId = student_id.trim();
+//     const trimmedName = name.trim();
+
+//     if (!trimmedStudentId || !trimmedName) {
+//       return next(
+//         new AppError(
+//           "Student ID and name are required",
+//           400
+//         )
+//       );
+//     }
+
+//     // =====================================================
+//     // 2. ESCAPE REGEX
+//     // =====================================================
+
+//     const escapedName = trimmedName.replace(
+//       /[.*+?^${}()|[\]\\]/g,
+//       "\\$&"
+//     );
+
+//     // =====================================================
+//     // 3. VERIFY STUDENT
+//     // =====================================================
+//     // Student ID = exact match
+//     // Name = partial match
+//     //
+//     // Example:
+//     // Official name: "Md Maruf Hossain"
+//     //
+//     // "Maruf"       -> match
+//     // "Hossain"     -> match
+//     // "Md Maruf"    -> match
+//     // "maruf"       -> match
+//     // =====================================================
+
+//     const student = await studentInfoModel.findOne({
+//       student_id: trimmedStudentId,
+//       name: {
+//         $regex: escapedName,
+//         $options: "i",
+//       },
+//     });
+
+//     if (!student) {
+//       return next(
+//         new AppError(
+//           "Student ID and name do not match our records",
+//           404
+//         )
+//       );
+//     }
+
+//     // =====================================================
+//     // 4. FIND AVAILABLE DONORS
+//     // =====================================================
+
+//     const donors = await userModel
+//       .find({
+//         role: "DONOR",
+//         is_active: true,
+//         available: true,
+//       })
+//       .select(
+//         "fullName phone student_id dept blood_group location name_visible phone_visible last_donation_date total_donations"
+//       )
+//       .lean();
+
+//     // =====================================================
+//     // 5. APPLY DONOR PRIVACY
+//     // =====================================================
+
+//     const publicDonors = donors.map((donor) => {
+//       const donorData = {
+//         ...donor,
+//       };
+
+//       // MongoDB ID hide
+//       delete donorData._id;
+
+//       // Donor name hide if disabled
+//       if (!donorData.name_visible) {
+//         delete donorData.fullName;
+//       }
+
+//       // Donor phone hide if disabled
+//       if (!donorData.phone_visible) {
+//         delete donorData.phone;
+//       }
+
+//       return donorData;
+//     });
+
+//     // =====================================================
+//     // 6. RESPONSE
+//     // =====================================================
+
+//     return res.status(200).json({
+//       success: true,
+
+//       message: "Student verified and donors found",
+
+//       verifiedStudent: {
+//         student_id: student.student_id,
+//         name: student.name,
+//         dept: student.dept,
+//       },
+
+//       count: publicDonors.length,
+
+//       donors: publicDonors,
+//     });
+//   } catch (error) {
+//     return next(error);
+//   }
+// };
+
+
+
 export const searchDonors = async (req, res, next) => {
   try {
     const { student_id, name } = req.query;
 
-    // =====================================================
-    // 1. STUDENT ID + NAME REQUIRED
-    // =====================================================
-
-    if (!student_id || !name) {
+    // Step 1: Validate input
+    if (
+      typeof student_id !== "string" ||
+      typeof name !== "string" ||
+      !student_id.trim() ||
+      !name.trim()
+    ) {
       return next(
-        new AppError(
-          "Student ID and name are required",
-          400
-        )
+        new AppError("Student ID and name are required", 400)
       );
     }
 
     const trimmedStudentId = student_id.trim();
     const trimmedName = name.trim();
 
-    if (!trimmedStudentId || !trimmedName) {
-      return next(
-        new AppError(
-          "Student ID and name are required",
-          400
-        )
-      );
-    }
+    // Step 2: Normalize names
+    const normalizeName = (value = "") =>
+      value.trim().replace(/\s+/g, " ").toLowerCase();
 
-    // =====================================================
-    // 2. ESCAPE REGEX
-    // =====================================================
+    const normalizedInputName = normalizeName(trimmedName);
 
-    const escapedName = trimmedName.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&"
-    );
-
-    // =====================================================
-    // 3. VERIFY STUDENT
-    // =====================================================
-    // Student ID = exact match
-    // Name = partial match
-    //
-    // Example:
-    // Official name: "Md Maruf Hossain"
-    //
-    // "Maruf"       -> match
-    // "Hossain"     -> match
-    // "Md Maruf"    -> match
-    // "maruf"       -> match
-    // =====================================================
-
+    // Step 3: Find student by exact student ID
     const student = await studentInfoModel.findOne({
       student_id: trimmedStudentId,
-      name: {
-        $regex: escapedName,
-        $options: "i",
-      },
     });
 
     if (!student) {
@@ -810,10 +920,24 @@ export const searchDonors = async (req, res, next) => {
       );
     }
 
-    // =====================================================
-    // 4. FIND AVAILABLE DONORS
-    // =====================================================
+    // Step 4: Match a complete name word or the full name
+    const normalizedStoredName = normalizeName(student.name);
+    const nameParts = normalizedStoredName.split(" ");
 
+    const isNameMatched =
+      normalizedInputName === normalizedStoredName ||
+      nameParts.includes(normalizedInputName);
+
+    if (!isNameMatched) {
+      return next(
+        new AppError(
+          "Student ID and name do not match our records",
+          404
+        )
+      );
+    }
+
+    // Step 5: Fetch active and available donors
     const donors = await userModel
       .find({
         role: "DONOR",
@@ -825,24 +949,16 @@ export const searchDonors = async (req, res, next) => {
       )
       .lean();
 
-    // =====================================================
-    // 5. APPLY DONOR PRIVACY
-    // =====================================================
-
+    // Step 6: Respect donor privacy settings
     const publicDonors = donors.map((donor) => {
-      const donorData = {
-        ...donor,
-      };
+      const donorData = { ...donor };
 
-      // MongoDB ID hide
       delete donorData._id;
 
-      // Donor name hide if disabled
       if (!donorData.name_visible) {
         delete donorData.fullName;
       }
 
-      // Donor phone hide if disabled
       if (!donorData.phone_visible) {
         delete donorData.phone;
       }
@@ -850,29 +966,23 @@ export const searchDonors = async (req, res, next) => {
       return donorData;
     });
 
-    // =====================================================
-    // 6. RESPONSE
-    // =====================================================
-
+    // Step 7: Send response
     return res.status(200).json({
       success: true,
-
       message: "Student verified and donors found",
-
       verifiedStudent: {
         student_id: student.student_id,
         name: student.name,
         dept: student.dept,
       },
-
       count: publicDonors.length,
-
       donors: publicDonors,
     });
   } catch (error) {
     return next(error);
   }
 };
+
 
 
 // =====================================================

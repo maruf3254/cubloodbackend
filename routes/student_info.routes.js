@@ -2,7 +2,7 @@ import { Router } from "express";
 
 import {
   getAllStudents,
-  getStudentFilterOptions,
+  getStudentFilterOptions, getSessionWiseStudents
 } from "../controllers/student_info.controller.js";
 
 import {
@@ -25,5 +25,10 @@ router.get(
   authorisedRoles("ADMIN"),
   getStudentFilterOptions
 );
+
+// router.get(
+//   "/session/:session",
+//   getSessionWiseStudents
+// );
 
 export default router;

@@ -2,114 +2,114 @@ import studentInfoModel from "../models/student_info.model.js";
 import AppError from "../utils/error.utils.js";
 
 const getSession = (studentId) => {
-    if (!studentId || studentId.length < 2) return null;
+  if (!studentId || studentId.length < 2) return null;
 
-    const prefix = Number(studentId.substring(0, 2));
+  const prefix = Number(studentId.substring(0, 2));
 
-    if (isNaN(prefix)) return null;
+  if (isNaN(prefix)) return null;
 
-    return `${prefix - 1}-${prefix}`;
+  return `${prefix - 1}-${prefix}`;
 };
 
 const getAllStudents = async (req, res, next) => {
-    try {
-        const page = Math.max(parseInt(req.query.page) || 1, 1);
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
 
-        const limit = Math.min(
-            Math.max(parseInt(req.query.limit) || 1000, 1),
-            1000
-        );
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit) || 1000, 1),
+      1000
+    );
 
-        const { dept, session, search } = req.query;
+    const { dept, session, search } = req.query;
 
-        // Base filter
-        const filter = {
-            student_id: {
-                $exists: true,
-                $regex: /^.{8,}$/,
-            },
-        };
+    // Base filter
+    const filter = {
+      student_id: {
+        $exists: true,
+        $regex: /^.{8,}$/,
+      },
+    };
 
-        // Department filter
-        if (dept && dept.trim() !== "") {
-            filter.dept = dept.trim();
-        }
-
-        // Search filter
-        if (search && search.trim() !== "") {
-            const searchRegex = new RegExp(search.trim(), "i");
-
-            filter.$or = [
-                { student_id: searchRegex },
-                { name: searchRegex },
-                { dept: searchRegex },
-            ];
-        }
-
-        /*
-          Session filtering
-    
-          Example:
-          17xxxxxx -> 16-17
-          23xxxxxx -> 22-23
-        */
-        if (session && session.trim() !== "") {
-            const sessionPrefix = session.split("-")[1];
-
-            if (sessionPrefix && /^\d{2}$/.test(sessionPrefix)) {
-                filter.student_id = {
-                    $exists: true,
-                    $regex: new RegExp(`^${sessionPrefix}.{6,}$`),
-                };
-            }
-        }
-
-        const skip = (page - 1) * limit;
-
-        const [students, totalStudents] = await Promise.all([
-            studentInfoModel
-                .find(filter)
-                .select("student_id dept name")
-                .sort({ student_id: 1 })
-                .skip(skip)
-                .limit(limit)
-                .lean(),
-
-            studentInfoModel.countDocuments(filter),
-        ]);
-
-        // Add session to each student
-        const studentsWithSession = students.map((student) => ({
-            ...student,
-            session: getSession(student.student_id),
-        }));
-
-        const totalPages = Math.ceil(totalStudents / limit);
-
-        res.status(200).json({
-            success: true,
-            message: "Students fetched successfully",
-
-            pagination: {
-                currentPage: page,
-                limit,
-                totalStudents,
-                totalPages,
-                hasNextPage: page < totalPages,
-                hasPreviousPage: page > 1,
-            },
-
-            filters: {
-                search: search || "",
-                department: dept || "",
-                session: session || "",
-            },
-
-            students: studentsWithSession,
-        });
-    } catch (error) {
-        return next(new AppError("Failed to fetch students", 500));
+    // Department filter
+    if (dept && dept.trim() !== "") {
+      filter.dept = dept.trim();
     }
+
+    // Search filter
+    if (search && search.trim() !== "") {
+      const searchRegex = new RegExp(search.trim(), "i");
+
+      filter.$or = [
+        { student_id: searchRegex },
+        { name: searchRegex },
+        { dept: searchRegex },
+      ];
+    }
+
+    /*
+      Session filtering
+ 
+      Example:
+      17xxxxxx -> 16-17
+      23xxxxxx -> 22-23
+    */
+    if (session && session.trim() !== "") {
+      const sessionPrefix = session.split("-")[1];
+
+      if (sessionPrefix && /^\d{2}$/.test(sessionPrefix)) {
+        filter.student_id = {
+          $exists: true,
+          $regex: new RegExp(`^${sessionPrefix}.{6,}$`),
+        };
+      }
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [students, totalStudents] = await Promise.all([
+      studentInfoModel
+        .find(filter)
+        .select("student_id dept name")
+        .sort({ student_id: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+
+      studentInfoModel.countDocuments(filter),
+    ]);
+
+    // Add session to each student
+    const studentsWithSession = students.map((student) => ({
+      ...student,
+      session: getSession(student.student_id),
+    }));
+
+    const totalPages = Math.ceil(totalStudents / limit);
+
+    res.status(200).json({
+      success: true,
+      message: "Students fetched successfully",
+
+      pagination: {
+        currentPage: page,
+        limit,
+        totalStudents,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+
+      filters: {
+        search: search || "",
+        department: dept || "",
+        session: session || "",
+      },
+
+      students: studentsWithSession,
+    });
+  } catch (error) {
+    return next(new AppError("Failed to fetch students", 500));
+  }
 };
 
 const getStudentFilterOptions = async (req, res, next) => {
@@ -155,4 +155,43 @@ const getStudentFilterOptions = async (req, res, next) => {
   }
 };
 
-export { getAllStudents, getStudentFilterOptions };
+
+const getSessionWiseStudents = async (req, res, next) => {
+  try {
+    const { session } = req.params;
+
+    if (!/^\d{2}-\d{2}$/.test(session)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid session format. Example: 22-23",
+      });
+    }
+
+    const [, endYear] = session.split("-");
+
+    const students = await studentInfoModel
+      .find({
+        student_id: {
+          $regex: `^${endYear}.{6,}$`,
+          $exists: true,
+        },
+      })
+      .select("-_id student_id name dept")
+      .sort({ student_id: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      session,
+      totalStudents: students.length,
+      students,
+    });
+  } catch (error) {
+    return next(
+      new AppError("Failed to fetch session-wise students", 500)
+    );
+  }
+};
+
+
+export { getAllStudents, getStudentFilterOptions, getSessionWiseStudents };
